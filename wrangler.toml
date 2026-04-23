@@ -1,0 +1,23 @@
+name = "palgate"
+main = "src/index.ts"
+compatibility_date = "2026-04-18"
+
+[[kv_namespaces]]
+binding = "COOLDOWN"
+id = "<YOUR_COOLDOWN_KV_ID>"
+
+[[kv_namespaces]]
+binding = "HOUSEHOLDS"
+id = "<YOUR_HOUSEHOLDS_KV_ID>"
+
+[[kv_namespaces]]
+binding = "INVITES"
+id = "<YOUR_INVITES_KV_ID>"
+
+[[kv_namespaces]]
+binding = "LOGS"
+id = "<YOUR_LOGS_KV_ID>"
+
+[[kv_namespaces]]
+binding = "USERS"
+id = "<YOUR_USERS_KV_ID>"
