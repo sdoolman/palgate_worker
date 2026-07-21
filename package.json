@@ -1,10 +1,16 @@
 {
+  "name": "palgate-worker",
+  "version": "1.0.0",
   "type": "module",
+  "scripts": {
+    "test": "npx tsx --test test/worker.test.ts"
+  },
   "dependencies": {
     "aes-js": "^3.1.2"
   },
   "devDependencies": {
     "@types/aes-js": "^3.1.4",
-    "@types/node": "^25.6.0"
+    "@types/node": "^25.6.0",
+    "tsx": "^4.19.0"
   }
 }

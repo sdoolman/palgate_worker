@@ -3,7 +3,7 @@ import * as telegram from "./telegram";
 import * as pal from "./pal";
 import { generateToken } from "./token";
 
-export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any): Promise<Response> {
+export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, request?: Request): Promise<Response> {
   try {
     const message = update.message;
     const callback = update.callback_query;
@@ -328,8 +328,9 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any):
       const token = crypto.randomUUID().replace(/-/g, "");
       const label = "Web Guest";
       await env.USERS.put(`webtoken:${token}`, JSON.stringify({ householdId, label, createdBy: userId, createdAt: Date.now() }));
-      const host = "palgate.stav973.workers.dev";
-      const linkUrl = `https://${host}/open?token=${token}`;
+      const host = request?.headers?.get("host") || "palgate.stav973.workers.dev";
+      const proto = request?.headers?.get("x-forwarded-proto") || "https";
+      const linkUrl = `${proto}://${host}/open?token=${token}`;
       await telegram.sendMessage(env, chatId, `🔑 <b>Web Token Link created!</b>\n\nLink:\n${linkUrl}\n\nToken ID: <code>${token}</code>\n\n<i>To assign a custom name, use: /webtoken <Name></i>`);
       return new Response("OK");
     }
@@ -366,8 +367,9 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any):
       const label = text.substring("/webtoken".length).trim() || "Web Guest";
       const token = crypto.randomUUID().replace(/-/g, "");
       await env.USERS.put(`webtoken:${token}`, JSON.stringify({ householdId, label, createdBy: userId, createdAt: Date.now() }));
-      const host = "palgate.stav973.workers.dev";
-      const linkUrl = `https://${host}/open?token=${token}`;
+      const host = request?.headers?.get("host") || "palgate.stav973.workers.dev";
+      const proto = request?.headers?.get("x-forwarded-proto") || "https";
+      const linkUrl = `${proto}://${host}/open?token=${token}`;
       await telegram.sendMessage(env, chatId, `🔑 <b>Web Token created for ${label}</b>!\n\nLink:\n${linkUrl}\n\nToken ID: <code>${token}</code>`);
       return new Response("OK");
     }

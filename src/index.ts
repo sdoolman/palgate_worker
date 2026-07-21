@@ -16,7 +16,7 @@ export default {
 
     try {
       const body: TelegramUpdate = await request.json();
-      return await handleUpdate(env, body, ctx);
+      return await handleUpdate(env, body, ctx, request);
     } catch (err) {
       console.error("Error:", err);
       return new Response("OK");
