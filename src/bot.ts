@@ -3,6 +3,11 @@ import * as telegram from "./telegram";
 import * as pal from "./pal";
 import { generateToken } from "./token";
 
+function normalizeText(text?: string): string {
+  if (!text) return "";
+  return text.replace(/[^\w\s]/gi, "").trim().toLowerCase();
+}
+
 export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, request?: Request): Promise<Response> {
   try {
     const message = update.message;
@@ -11,6 +16,7 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
     const userId = String(message?.from?.id || callback?.from?.id);
     const chatId = message?.chat?.id || callback?.message?.chat?.id;
     const text = message?.text;
+    const normText = normalizeText(text);
 
     if (!chatId) return new Response("OK");
 
@@ -23,13 +29,15 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
       ? JSON.parse(await env.HOUSEHOLDS.get(householdId) || "null")
       : null;
 
+    const isOwner = Boolean(house && String(house.ownerId) === String(userId));
+
     if (text === "/init_bot") {
       await telegram.setupTelegramMenu(env);
       await telegram.sendMessage(env, chatId, "✅ Telegram menu initialized");
       return new Response("OK");
     }
 
-    if (text === "/start" || text === "/menu") {
+    if (text === "/start" || text === "/menu" || normText === "start" || normText === "menu") {
       if (!house) {
         await telegram.sendMessage(env, chatId,
           "👋 Welcome!\n\n/create_house to begin\n/join <code> to join"
@@ -41,7 +49,7 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
       return new Response("OK");
     }
 
-    if (text === "/create_house") {
+    if (text === "/create_house" || normText === "create house") {
       const id = crypto.randomUUID();
       const newHouse: House = {
         ownerId: userId,
@@ -65,7 +73,7 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
         await telegram.sendMessage(env, chatId, "❌ Create house first");
         return new Response("OK");
       }
-      if (house.ownerId !== userId) {
+      if (!isOwner) {
         await telegram.sendMessage(env, chatId, "🚫 Owner only");
         return new Response("OK");
       }
@@ -89,7 +97,7 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
         await telegram.sendMessage(env, chatId, "❌ Create house first");
         return new Response("OK");
       }
-      if (house.ownerId !== userId) {
+      if (!isOwner) {
         await telegram.sendMessage(env, chatId, "🚫 Owner only");
         return new Response("OK");
       }
@@ -135,7 +143,7 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
         await telegram.sendMessage(env, chatId, "❌ Create house first");
         return new Response("OK");
       }
-      if (house.ownerId !== userId) {
+      if (!isOwner) {
         await telegram.sendMessage(env, chatId, "🚫 Owner only");
         return new Response("OK");
       }
@@ -194,7 +202,7 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
     }
 
     if (callback?.data?.startsWith("select_device:")) {
-      if (!house || house.ownerId !== userId) return new Response("OK");
+      if (!house || !isOwner) return new Response("OK");
 
       const deviceId = callback.data.split(":")[1];
       const dynamicToken = generateToken(house.apiToken!, house.phone!, house.tokenType || "PRIMARY");
@@ -231,7 +239,7 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
       return new Response("OK");
     }
 
-    if (callback?.data === "open_gate" || text === "🔓 Open Gate" || text?.includes("Open Gate")) {
+    if (callback?.data === "open_gate" || normText.includes("open gate")) {
       if (!house?.deviceId || !house?.apiToken) {
         if (callback) await telegram.answerCallback(env, callback.id, "❌ Not configured");
         else await telegram.sendMessage(env, chatId, "❌ Not configured");
@@ -250,7 +258,7 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
 
       await log(env, householdId, userId, success);
 
-      if (success && house.ownerId !== userId) {
+      if (success && !isOwner) {
         await telegram.sendMessage(env, parseInt(house.ownerId),
           `🔔 Gate opened by ${userId}`
         );
@@ -265,8 +273,8 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
       return new Response("OK");
     }
 
-    if (callback?.data === "logs" || text === "📊 Logs" || text?.includes("Logs")) {
-      if (!house || house.ownerId !== userId) {
+    if (callback?.data === "logs" || normText.includes("log")) {
+      if (!house || !isOwner) {
         if (callback) await telegram.answerCallback(env, callback.id, "🚫 Owner only");
         else await telegram.sendMessage(env, chatId, "🚫 Owner only");
         return new Response("OK");
@@ -281,7 +289,6 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
         list.keys.map(async (k: { name: string }) => {
           const val = await env.LOGS.get(k.name);
           if (!val) return null;
-          // If old log entry doesn't have YYYY-MM-DD date prefix, extract date from timestamp in key!
           if (!val.match(/^\d{4}-\d{2}-\d{2}/)) {
             const ts = k.name.split(":")[2];
             if (ts && !isNaN(parseInt(ts))) {
@@ -303,8 +310,8 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
       return new Response("OK");
     }
 
-    if (callback?.data === "invite" || text === "👥 Invite" || text === "👥 Invites" || text?.includes("Invite")) {
-      if (!house || house.ownerId !== userId) {
+    if (callback?.data === "invite" || normText.includes("invite")) {
+      if (!house || !isOwner) {
         if (callback) await telegram.answerCallback(env, callback.id, "🚫 Owner only");
         else await telegram.sendMessage(env, chatId, "🚫 Owner only");
         return new Response("OK");
@@ -329,7 +336,7 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
     }
 
     if (callback?.data === "create_telegram_invite") {
-      if (!house || house.ownerId !== userId) return new Response("OK");
+      if (!house || !isOwner) return new Response("OK");
       const code = Math.random().toString(36).substring(2, 8);
       await env.INVITES.put(code, householdId, { expirationTtl: 3600 });
       await telegram.sendMessage(env, chatId, `🔑 <b>Telegram Invite Code:</b> <code>${code}</code>\n\nValid for 1 hour. Guest should send: <code>/join ${code}</code>`);
@@ -337,7 +344,7 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
     }
 
     if (callback?.data === "create_web_link") {
-      if (!house || house.ownerId !== userId) return new Response("OK");
+      if (!house || !isOwner) return new Response("OK");
       const token = crypto.randomUUID().replace(/-/g, "");
       const label = "Web Guest";
       await env.USERS.put(`webtoken:${token}`, JSON.stringify({ householdId, label, createdBy: userId, createdAt: Date.now() }));
@@ -349,7 +356,7 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
     }
 
     if (callback?.data === "list_web_links") {
-      if (!house || house.ownerId !== userId) return new Response("OK");
+      if (!house || !isOwner) return new Response("OK");
       const list = await env.USERS.list({ prefix: "webtoken:" });
       if (!list.keys || list.keys.length === 0) {
         await telegram.sendMessage(env, chatId, "No active web tokens found.");
@@ -373,7 +380,7 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
     }
 
     if (text?.startsWith("/webtoken")) {
-      if (!house || house.ownerId !== userId) {
+      if (!house || !isOwner) {
         await telegram.sendMessage(env, chatId, "🚫 Owner only");
         return new Response("OK");
       }
@@ -388,7 +395,7 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
     }
 
     if (text === "/listtokens") {
-      if (!house || house.ownerId !== userId) {
+      if (!house || !isOwner) {
         await telegram.sendMessage(env, chatId, "🚫 Owner only");
         return new Response("OK");
       }
@@ -415,7 +422,7 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
     }
 
     if (text?.startsWith("/revoketoken")) {
-      if (!house || house.ownerId !== userId) {
+      if (!house || !isOwner) {
         await telegram.sendMessage(env, chatId, "🚫 Owner only");
         return new Response("OK");
       }
@@ -429,8 +436,8 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
       return new Response("OK");
     }
 
-    if (callback?.data === "settings" || text === "⚙️ Settings" || text === "⚙ Settings" || text?.includes("Settings")) {
-      if (!house || house.ownerId !== userId) {
+    if (callback?.data === "settings" || normText.includes("setting")) {
+      if (!house || !isOwner) {
         if (callback) await telegram.answerCallback(env, callback.id, "🚫 Owner only");
         else await telegram.sendMessage(env, chatId, "🚫 Owner only");
         return new Response("OK");
