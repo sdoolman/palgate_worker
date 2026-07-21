@@ -436,14 +436,14 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
       return new Response("OK");
     }
 
-    if (callback?.data === "settings" || normText.includes("setting")) {
+    if (callback?.data === "settings" || text === "/settings" || normText.includes("setting")) {
       if (!house || !isOwner) {
         if (callback) await telegram.answerCallback(env, callback.id, "🚫 Owner only");
         else await telegram.sendMessage(env, chatId, "🚫 Owner only");
         return new Response("OK");
       }
 
-      const replyMsg = `⚙️ <b>Settings</b>\n\nDevice: <b>${house.deviceName || "Not set"}</b>\nPhone: <code>${house.phone || "Not set"}</code>\n\nLink automatically with /link\nOr manually: /setphone <phone> then /settoken <session_token>`;
+      const replyMsg = `⚙️ <b>Household & Gate Info</b>\n\n<b>Device:</b> <b>${house.deviceName || "Not set"}</b>\n<b>Device ID:</b> <code>${house.deviceId || "Not set"}</code>\n<b>Phone:</b> <code>${house.phone || "Not set"}</code>\n\n<b>Configuration Options:</b>\n• Link automatically: /link\n• Set Phone: <code>/setphone &lt;phone&gt;</code>\n• Set Session Token: <code>/settoken &lt;session_token&gt;</code>`;
       if (callback) {
         await telegram.editMessage(env, chatId, callback.message!.message_id, replyMsg);
       } else {
