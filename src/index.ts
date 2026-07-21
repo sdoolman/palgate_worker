@@ -1,8 +1,15 @@
-﻿﻿import { handleUpdate } from "./bot";
+import { handleUpdate, handleDirectOpen } from "./bot";
 import type { TelegramUpdate } from "./types";
 
 export default {
   async fetch(request: Request, env: any, ctx: any): Promise<Response> {
+    const url = new URL(request.url);
+
+    if (url.pathname === "/open" || url.pathname === "/direct/open") {
+      const token = url.searchParams.get("token");
+      return await handleDirectOpen(env, token, request);
+    }
+
     if (request.method !== "POST") {
       return new Response("OK");
     }

@@ -290,21 +290,127 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any):
       return new Response("OK");
     }
 
-    if (callback?.data === "invite" || text === "👥 Invite") {
+    if (callback?.data === "invite" || text === "👥 Invite" || text === "👥 Invites") {
       if (!house || house.ownerId !== userId) {
         if (callback) await telegram.answerCallback(env, callback.id, "🚫 Owner only");
         else await telegram.sendMessage(env, chatId, "🚫 Owner only");
         return new Response("OK");
       }
 
+      const inlineKeyboard = [
+        [{ text: "📲 Telegram Join Code", callback_data: "create_telegram_invite" }],
+        [{ text: "🔗 Create Web Link", callback_data: "create_web_link" }],
+        [{ text: "📋 Active Web Links", callback_data: "list_web_links" }]
+      ];
+
+      return fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: "👥 <b>Invites & Web Access Links</b>\n\nSelect an option below to manage guest access:",
+          parse_mode: "HTML",
+          reply_markup: { inline_keyboard: inlineKeyboard }
+        })
+      });
+    }
+
+    if (callback?.data === "create_telegram_invite") {
+      if (!house || house.ownerId !== userId) return new Response("OK");
       const code = Math.random().toString(36).substring(2, 8);
       await env.INVITES.put(code, householdId, { expirationTtl: 3600 });
+      await telegram.sendMessage(env, chatId, `🔑 <b>Telegram Invite Code:</b> <code>${code}</code>\n\nValid for 1 hour. Guest should send: <code>/join ${code}</code>`);
+      return new Response("OK");
+    }
 
-      if (callback) {
-        await telegram.editMessage(env, chatId, callback.message!.message_id, `🔑 Invite: ${code}`);
-      } else {
-        await telegram.sendMessage(env, chatId, `🔑 Invite: ${code}`);
+    if (callback?.data === "create_web_link") {
+      if (!house || house.ownerId !== userId) return new Response("OK");
+      const token = crypto.randomUUID().replace(/-/g, "");
+      const label = "Web Guest";
+      await env.USERS.put(`webtoken:${token}`, JSON.stringify({ householdId, label, createdBy: userId, createdAt: Date.now() }));
+      const host = "palgate.stav973.workers.dev";
+      const linkUrl = `https://${host}/open?token=${token}`;
+      await telegram.sendMessage(env, chatId, `🔑 <b>Web Token Link created!</b>\n\nLink:\n${linkUrl}\n\nToken ID: <code>${token}</code>\n\n<i>To assign a custom name, use: /webtoken <Name></i>`);
+      return new Response("OK");
+    }
+
+    if (callback?.data === "list_web_links") {
+      if (!house || house.ownerId !== userId) return new Response("OK");
+      const list = await env.USERS.list({ prefix: "webtoken:" });
+      if (!list.keys || list.keys.length === 0) {
+        await telegram.sendMessage(env, chatId, "No active web tokens found.");
+        return new Response("OK");
       }
+      let msg = "🔑 <b>Active Web Tokens:</b>\n\n";
+      for (const key of list.keys) {
+        const tokenVal = await env.USERS.get(key.name);
+        if (tokenVal) {
+          try {
+            const parsed = JSON.parse(tokenVal);
+            if (parsed.householdId === householdId) {
+              const tokenStr = key.name.replace("webtoken:", "");
+              msg += `• <b>${parsed.label}</b>\n  ID: <code>${tokenStr}</code>\n\n`;
+            }
+          } catch(e) {}
+        }
+      }
+      await telegram.sendMessage(env, chatId, msg);
+      return new Response("OK");
+    }
+
+    if (text?.startsWith("/webtoken")) {
+      if (!house || house.ownerId !== userId) {
+        await telegram.sendMessage(env, chatId, "🚫 Owner only");
+        return new Response("OK");
+      }
+      const label = text.substring("/webtoken".length).trim() || "Web Guest";
+      const token = crypto.randomUUID().replace(/-/g, "");
+      await env.USERS.put(`webtoken:${token}`, JSON.stringify({ householdId, label, createdBy: userId, createdAt: Date.now() }));
+      const host = "palgate.stav973.workers.dev";
+      const linkUrl = `https://${host}/open?token=${token}`;
+      await telegram.sendMessage(env, chatId, `🔑 <b>Web Token created for ${label}</b>!\n\nLink:\n${linkUrl}\n\nToken ID: <code>${token}</code>`);
+      return new Response("OK");
+    }
+
+    if (text === "/listtokens") {
+      if (!house || house.ownerId !== userId) {
+        await telegram.sendMessage(env, chatId, "🚫 Owner only");
+        return new Response("OK");
+      }
+      const list = await env.USERS.list({ prefix: "webtoken:" });
+      if (!list.keys || list.keys.length === 0) {
+        await telegram.sendMessage(env, chatId, "No active web tokens found.");
+        return new Response("OK");
+      }
+      let msg = "🔑 <b>Active Web Tokens:</b>\n\n";
+      for (const key of list.keys) {
+        const tokenVal = await env.USERS.get(key.name);
+        if (tokenVal) {
+          try {
+            const parsed = JSON.parse(tokenVal);
+            if (parsed.householdId === householdId) {
+              const tokenStr = key.name.replace("webtoken:", "");
+              msg += `• <b>${parsed.label}</b>\n  ID: <code>${tokenStr}</code>\n\n`;
+            }
+          } catch(e) {}
+        }
+      }
+      await telegram.sendMessage(env, chatId, msg);
+      return new Response("OK");
+    }
+
+    if (text?.startsWith("/revoketoken")) {
+      if (!house || house.ownerId !== userId) {
+        await telegram.sendMessage(env, chatId, "🚫 Owner only");
+        return new Response("OK");
+      }
+      const targetToken = text.split(" ")[1]?.trim();
+      if (!targetToken) {
+        await telegram.sendMessage(env, chatId, "❌ Usage: /revoketoken <token_id>");
+        return new Response("OK");
+      }
+      await env.USERS.delete(`webtoken:${targetToken}`);
+      await telegram.sendMessage(env, chatId, `✅ Token <code>${targetToken}</code> revoked successfully.`);
       return new Response("OK");
     }
 
@@ -331,7 +437,104 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any):
   }
 }
 
-// ================= HELPERS =================
+// ================= HELPERS & WEB HANDLERS =================
+
+export async function handleDirectOpen(env: any, token: string | null, request: Request): Promise<Response> {
+  const acceptHeader = request?.headers?.get("accept") || "";
+  const wantsJson = acceptHeader.includes("application/json");
+
+  if (!token) {
+    if (wantsJson) return new Response(JSON.stringify({ success: false, message: "No access token provided" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    return renderHtmlResponse("❌ Missing Token", "No access token provided in request.", 400);
+  }
+
+  const tokenDataJson = await env.USERS.get(`webtoken:${token}`);
+  if (!tokenDataJson) {
+    if (wantsJson) return new Response(JSON.stringify({ success: false, message: "Invalid or revoked token" }), { status: 403, headers: { "Content-Type": "application/json" } });
+    return renderHtmlResponse("❌ Invalid Token", "This access link is invalid or has been revoked.", 403);
+  }
+
+  let tokenData: any;
+  try {
+    tokenData = JSON.parse(tokenDataJson);
+  } catch (e) {
+    if (wantsJson) return new Response(JSON.stringify({ success: false, message: "Error parsing token data" }), { status: 500, headers: { "Content-Type": "application/json" } });
+    return renderHtmlResponse("❌ Error", "Failed to parse token data.", 500);
+  }
+
+  const { householdId, label } = tokenData;
+  const houseJson = await env.HOUSEHOLDS.get(householdId);
+  if (!houseJson) {
+    if (wantsJson) return new Response(JSON.stringify({ success: false, message: "Household configuration missing" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    return renderHtmlResponse("❌ Household Not Found", "Associated household configuration missing.", 404);
+  }
+  const house: House = JSON.parse(houseJson);
+
+  if (!house.deviceId || !house.apiToken) {
+    if (wantsJson) return new Response(JSON.stringify({ success: false, message: "Gate device or API token not set up" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    return renderHtmlResponse("❌ Gate Not Configured", "Gate device or API token not set up.", 400);
+  }
+
+  const allowed = await checkCooldown(env, householdId, `web:${token}`);
+  if (!allowed) {
+    if (wantsJson) return new Response(JSON.stringify({ success: false, message: "Cooldown active, please wait 10 seconds" }), { status: 429, headers: { "Content-Type": "application/json" } });
+    return renderHtmlResponse("⏳ Cooldown Active", "Please wait 10 seconds before opening the gate again.", 429);
+  }
+
+  const dynamicToken = generateToken(house.apiToken, house.phone!, house.tokenType || "PRIMARY");
+  const success = await pal.openGate(house, dynamicToken);
+
+  const userLabel = label || `web:${token.substring(0, 6)}`;
+  await log(env, householdId, userLabel, success);
+
+  if (success && house.ownerId) {
+    await telegram.sendMessage(
+      env,
+      parseInt(house.ownerId),
+      `🔔 Gate opened via Web Link by <b>${userLabel}</b>`
+    ).catch(() => {});
+  }
+
+  if (wantsJson) {
+    return new Response(JSON.stringify({ success, message: success ? "Gate opened" : "Failed to open gate" }), {
+      status: success ? 200 : 500,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+
+  if (success) {
+    return renderHtmlResponse("✅ Gate Opened", `Parking gate triggered successfully for <b>${userLabel}</b>.`, 200);
+  } else {
+    return renderHtmlResponse("❌ Gate Opening Failed", "Failed to open parking gate. Please try again.", 500);
+  }
+}
+
+function renderHtmlResponse(title: string, message: string, status = 200): Response {
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #0f172a; color: #f8fafc; text-align: center; }
+    .card { background: #1e293b; padding: 2rem; border-radius: 1rem; box-shadow: 0 10px 25px rgba(0,0,0,0.5); max-width: 90%; width: 360px; border: 1px solid #334155; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    p { color: #94a3b8; font-size: 1rem; line-height: 1.5; margin-bottom: 1.5rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>${title}</h1>
+    <p>${message}</p>
+  </div>
+</body>
+</html>`;
+  return new Response(html, {
+    status,
+    headers: { "Content-Type": "text/html; charset=utf-8" }
+  });
+}
 
 async function checkCooldown(env: any, hid: string, uid: string): Promise<boolean> {
   const key = `cooldown:${hid}:${uid}`;

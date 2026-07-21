@@ -31,7 +31,7 @@ export async function sendMenu(env: any, chatId: number, house: House, userId: s
 
   if (isOwner) {
     keyboard.push(
-      [{ text: "📊 Logs" }, { text: "👥 Invite" }],
+      [{ text: "📊 Logs" }, { text: "👥 Invites" }],
       [{ text: "⚙️ Settings" }]
     );
   }
@@ -72,7 +72,7 @@ export async function sendMessage(env: any, chatId: number, text: string) {
   return fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text })
+    body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" })
   });
 }
 
@@ -80,7 +80,7 @@ export async function editMessage(env: any, chatId: number, messageId: number, t
   return fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/editMessageText`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, message_id: messageId, text })
+    body: JSON.stringify({ chat_id: chatId, message_id: messageId, text, parse_mode: "HTML" })
   });
 }
 
