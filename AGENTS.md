@@ -68,7 +68,7 @@ Enforces a 10-second rate-limiting cooldown per household/user.
 ### 4. `LOGS`
 Stores access history.
 * **Key Format**: `log:<householdId>:<timestamp>`
-* **Value**: String format (`HH:MM:SS - <userId/label> - OK/FAIL`)
+* **Value**: String format (`YYYY-MM-DD HH:mm:ss UTC - <userId/label> - OK/FAIL`)
 
 ### 5. `INVITES`
 Temporary 1-hour invite codes for household join requests.
@@ -99,11 +99,48 @@ PalGate requires time-sensitive dynamic AES tokens:
 ## 📁 Source Code Map
 
 * `src/index.ts`: Worker entry point (`fetch` handler and route dispatch).
-* `src/bot.ts`: Main Telegram update dispatcher, command logic, web token logic (`handleDirectOpen`), and helpers (`checkCooldown`, `log`).
+* `src/bot.ts`: Main Telegram update dispatcher, command logic, web token logic (`handleDirectOpen`), and helpers (`checkCooldown`, `log`, `escapeHtml`, `normalizeText`).
 * `src/telegram.ts`: Telegram Bot API wrapper methods (`sendMessage`, `sendMenu`, `editMessage`, `sendPhoto`). Uses `parse_mode: "HTML"`.
 * `src/pal.ts`: PalGate HTTP API client (`fetchDevices`, `openGate`, `initLink`).
 * `src/token.ts` & `src/aes.ts`: PalGate token generation algorithms.
 * `src/types.ts`: TypeScript interfaces (`House`, `TelegramUpdate`, etc.).
+
+---
+
+## ⚠️ Critical Coding Standards & Pitfalls to Avoid
+
+When modifying this repository, developers and AI agents **MUST** strictly follow these rules to avoid subtle production bugs:
+
+### 1. Telegram HTML Entity Escaping (`escapeHtml`)
+* **Problem**: When `sendMessage` or `editMessage` is called with `parse_mode: "HTML"`, any raw text containing unescaped HTML characters (like `<phone>`, `<token>`, or dynamic string values such as user labels or Hebrew device names containing `<`/`>`/`&`) will cause Telegram's API to reject the request with `HTTP 400 Bad Request: can't parse entities`.
+* **Rule**: Always pass dynamic string variables or code examples through `escapeHtml()` before interpolating them into HTML templates:
+  ```typescript
+  function escapeHtml(str: any): string {
+    if (str === null || str === undefined) return "";
+    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  ```
+
+### 2. Type-Safe User & Owner ID Comparison (`String()`)
+* **Problem**: Cloudflare KV serialization or previous code might store `ownerId` as a Number (`123456789`), while Telegram update payloads send `from.id` as a String (`"123456789"`). Strict equality (`house.ownerId === userId`) evaluates to `false` due to type mismatch.
+* **Rule**: Always coerce both IDs to strings when checking owner permissions:
+  ```typescript
+  const isOwner = Boolean(house && String(house.ownerId) === String(userId));
+  ```
+
+### 3. Robust Text Normalization (`normalizeText`) Over Emoji Matching
+* **Problem**: Relying on exact string equality for Telegram keyboard text (e.g. `text === "⚙️ Settings"`) is extremely fragile. Different mobile operating systems (iOS vs Android vs Web) append or strip invisible Unicode variation selectors (such as `\uFE0F`).
+* **Rule**: Use `normalizeText()` to strip non-alphanumeric symbols and compare clean tokens:
+  ```typescript
+  function normalizeText(text?: string): string {
+    if (!text) return "";
+    return text.replace(/[^\w\s]/gi, "").trim().toLowerCase();
+  }
+  ```
+
+### 4. Full ISO Date & Time Logging
+* **Problem**: Standard `toLocaleTimeString()` outputs only the time portion without calendar dates (`HH:MM:SS AM/PM`), making historical audit logs ambiguous.
+* **Rule**: Always format access logs with full UTC dates: `YYYY-MM-DD HH:mm:ss UTC`.
 
 ---
 
