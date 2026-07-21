@@ -8,6 +8,14 @@ function normalizeText(text?: string): string {
   return text.replace(/[^\w\s]/gi, "").trim().toLowerCase();
 }
 
+function escapeHtml(str: any): string {
+  if (str === null || str === undefined) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, request?: Request): Promise<Response> {
   try {
     const message = update.message;
@@ -370,7 +378,7 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
             const parsed = JSON.parse(tokenVal);
             if (parsed.householdId === householdId) {
               const tokenStr = key.name.replace("webtoken:", "");
-              msg += `• <b>${parsed.label}</b>\n  ID: <code>${tokenStr}</code>\n\n`;
+              msg += `• <b>${escapeHtml(parsed.label)}</b>\n  ID: <code>${tokenStr}</code>\n\n`;
             }
           } catch(e) {}
         }
@@ -390,7 +398,7 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
       const host = request?.headers?.get("host") || "palgate.stav973.workers.dev";
       const proto = request?.headers?.get("x-forwarded-proto") || "https";
       const linkUrl = `${proto}://${host}/open?token=${token}`;
-      await telegram.sendMessage(env, chatId, `🔑 <b>Web Token created for ${label}</b>!\n\nLink:\n${linkUrl}\n\nToken ID: <code>${token}</code>`);
+      await telegram.sendMessage(env, chatId, `🔑 <b>Web Token created for ${escapeHtml(label)}</b>!\n\nLink:\n${linkUrl}\n\nToken ID: <code>${token}</code>`);
       return new Response("OK");
     }
 
@@ -412,7 +420,7 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
             const parsed = JSON.parse(tokenVal);
             if (parsed.householdId === householdId) {
               const tokenStr = key.name.replace("webtoken:", "");
-              msg += `• <b>${parsed.label}</b>\n  ID: <code>${tokenStr}</code>\n\n`;
+              msg += `• <b>${escapeHtml(parsed.label)}</b>\n  ID: <code>${tokenStr}</code>\n\n`;
             }
           } catch(e) {}
         }
@@ -436,14 +444,34 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
       return new Response("OK");
     }
 
-    if (callback?.data === "settings" || text === "/settings" || normText.includes("setting")) {
-      if (!house || !isOwner) {
-        if (callback) await telegram.answerCallback(env, callback.id, "🚫 Owner only");
-        else await telegram.sendMessage(env, chatId, "🚫 Owner only");
+    // Household Info & Settings command (available for all household members, with owner command options)
+    if (callback?.data === "settings" || callback?.data === "info" || text === "/settings" || text === "/info" || normText.includes("setting") || normText.includes("info")) {
+      if (!house) {
+        await telegram.sendMessage(env, chatId, "❌ Create house first with /create_house or join with /join <code>");
         return new Response("OK");
       }
 
-      const replyMsg = `⚙️ <b>Household & Gate Info</b>\n\n<b>Device:</b> <b>${house.deviceName || "Not set"}</b>\n<b>Device ID:</b> <code>${house.deviceId || "Not set"}</code>\n<b>Phone:</b> <code>${house.phone || "Not set"}</code>\n\n<b>Configuration Options:</b>\n• Link automatically: /link\n• Set Phone: <code>/setphone &lt;phone&gt;</code>\n• Set Session Token: <code>/settoken &lt;session_token&gt;</code>`;
+      const roleStr = isOwner ? "👑 Owner" : "👤 Member";
+      const deviceName = escapeHtml(house.deviceName || "Not set");
+      const deviceId = escapeHtml(house.deviceId || "Not set");
+      const phone = escapeHtml(house.phone || "Not set");
+
+      let replyMsg = `ℹ️ <b>Household & Gate Info</b>\n\n`;
+      replyMsg += `<b>Device:</b> <b>${deviceName}</b>\n`;
+      replyMsg += `<b>Device ID:</b> <code>${deviceId}</code>\n`;
+      replyMsg += `<b>Phone:</b> <code>${phone}</code>\n`;
+      replyMsg += `<b>Role:</b> ${roleStr}\n`;
+      replyMsg += `<b>House ID:</b> <code>${householdId}</code>\n`;
+
+      if (isOwner) {
+        replyMsg += `\n<b>Owner Commands:</b>\n`;
+        replyMsg += `• Scan QR Link: /link\n`;
+        replyMsg += `• Create Web Link: /webtoken &lt;Name&gt;\n`;
+        replyMsg += `• List Web Links: /listtokens\n`;
+        replyMsg += `• Set Phone: <code>/setphone &lt;phone&gt;</code>\n`;
+        replyMsg += `• Set Token: <code>/settoken &lt;session_token&gt;</code>`;
+      }
+
       if (callback) {
         await telegram.editMessage(env, chatId, callback.message!.message_id, replyMsg);
       } else {
@@ -513,7 +541,7 @@ export async function handleDirectOpen(env: any, token: string | null, request: 
     await telegram.sendMessage(
       env,
       parseInt(house.ownerId),
-      `🔔 Gate opened via Web Link by <b>${userLabel}</b>`
+      `🔔 Gate opened via Web Link by <b>${escapeHtml(userLabel)}</b>`
     ).catch(() => {});
   }
 
@@ -525,7 +553,7 @@ export async function handleDirectOpen(env: any, token: string | null, request: 
   }
 
   if (success) {
-    return renderHtmlResponse("✅ Gate Opened", `Parking gate triggered successfully for <b>${userLabel}</b>.`, 200);
+    return renderHtmlResponse("✅ Gate Opened", `Parking gate triggered successfully for <b>${escapeHtml(userLabel)}</b>.`, 200);
   } else {
     return renderHtmlResponse("❌ Gate Opening Failed", "Failed to open parking gate. Please try again.", 500);
   }

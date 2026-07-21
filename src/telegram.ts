@@ -15,6 +15,8 @@ export async function setupTelegramMenu(env: any) {
     body: JSON.stringify({
       commands: [
         { command: "menu", description: "Open gate control" },
+        { command: "info", description: "Household & gate info" },
+        { command: "settings", description: "Household & gate settings" },
         { command: "start", description: "Start bot" },
         { command: "help", description: "Help" }
       ]
@@ -23,7 +25,7 @@ export async function setupTelegramMenu(env: any) {
 }
 
 export async function sendMenu(env: any, chatId: number, house: House, userId: string) {
-  const isOwner = house?.ownerId === userId;
+  const isOwner = Boolean(house && String(house.ownerId) === String(userId));
 
   const keyboard: { text: string }[][] = [
     [{ text: "🔓 Open Gate" }]
@@ -32,7 +34,11 @@ export async function sendMenu(env: any, chatId: number, house: House, userId: s
   if (isOwner) {
     keyboard.push(
       [{ text: "📊 Logs" }, { text: "👥 Invites" }],
-      [{ text: "⚙️ Settings" }]
+      [{ text: "ℹ️ Household Info" }]
+    );
+  } else {
+    keyboard.push(
+      [{ text: "ℹ️ Household Info" }]
     );
   }
 
