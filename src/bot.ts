@@ -231,7 +231,7 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
       return new Response("OK");
     }
 
-    if (callback?.data === "open_gate" || text === "🔓 Open Gate") {
+    if (callback?.data === "open_gate" || text === "🔓 Open Gate" || text?.includes("Open Gate")) {
       if (!house?.deviceId || !house?.apiToken) {
         if (callback) await telegram.answerCallback(env, callback.id, "❌ Not configured");
         else await telegram.sendMessage(env, chatId, "❌ Not configured");
@@ -265,7 +265,7 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
       return new Response("OK");
     }
 
-    if (callback?.data === "logs" || text === "📊 Logs") {
+    if (callback?.data === "logs" || text === "📊 Logs" || text?.includes("Logs")) {
       if (!house || house.ownerId !== userId) {
         if (callback) await telegram.answerCallback(env, callback.id, "🚫 Owner only");
         else await telegram.sendMessage(env, chatId, "🚫 Owner only");
@@ -278,10 +278,23 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
       });
 
       const logs = await Promise.all(
-        list.keys.map((k: { name: any }) => env.LOGS.get(k.name))
+        list.keys.map(async (k: { name: string }) => {
+          const val = await env.LOGS.get(k.name);
+          if (!val) return null;
+          // If old log entry doesn't have YYYY-MM-DD date prefix, extract date from timestamp in key!
+          if (!val.match(/^\d{4}-\d{2}-\d{2}/)) {
+            const ts = k.name.split(":")[2];
+            if (ts && !isNaN(parseInt(ts))) {
+              const d = new Date(parseInt(ts));
+              const formattedDate = d.toISOString().replace("T", " ").substring(0, 19);
+              return `${formattedDate} UTC - ${val}`;
+            }
+          }
+          return val;
+        })
       );
 
-      const replyMsg = logs.reverse().join("\n") || "No logs";
+      const replyMsg = `📊 <b>Access Logs:</b>\n\n` + (logs.filter(Boolean).reverse().join("\n") || "No logs");
       if (callback) {
         await telegram.editMessage(env, chatId, callback.message!.message_id, replyMsg);
       } else {
@@ -290,7 +303,7 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
       return new Response("OK");
     }
 
-    if (callback?.data === "invite" || text === "👥 Invite" || text === "👥 Invites") {
+    if (callback?.data === "invite" || text === "👥 Invite" || text === "👥 Invites" || text?.includes("Invite")) {
       if (!house || house.ownerId !== userId) {
         if (callback) await telegram.answerCallback(env, callback.id, "🚫 Owner only");
         else await telegram.sendMessage(env, chatId, "🚫 Owner only");
@@ -416,14 +429,14 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
       return new Response("OK");
     }
 
-    if (callback?.data === "settings" || text === "⚙️ Settings") {
+    if (callback?.data === "settings" || text === "⚙️ Settings" || text === "⚙ Settings" || text?.includes("Settings")) {
       if (!house || house.ownerId !== userId) {
         if (callback) await telegram.answerCallback(env, callback.id, "🚫 Owner only");
         else await telegram.sendMessage(env, chatId, "🚫 Owner only");
         return new Response("OK");
       }
 
-      const replyMsg = `⚙️ Settings\n\nDevice:\n${house.deviceName || "Not set"}\n\nLink automatically with /link\nOr manually: /setphone <phone> then /settoken <session_token>`;
+      const replyMsg = `⚙️ <b>Settings</b>\n\nDevice: <b>${house.deviceName || "Not set"}</b>\nPhone: <code>${house.phone || "Not set"}</code>\n\nLink automatically with /link\nOr manually: /setphone <phone> then /settoken <session_token>`;
       if (callback) {
         await telegram.editMessage(env, chatId, callback.message!.message_id, replyMsg);
       } else {
@@ -550,6 +563,8 @@ async function checkCooldown(env: any, hid: string, uid: string): Promise<boolea
 }
 
 async function log(env: any, hid: string, uid: string, success: boolean) {
-  const entry = `${new Date().toLocaleTimeString()} - ${uid} - ${success ? "OK" : "FAIL"}`;
+  const now = new Date();
+  const dateStr = now.toISOString().replace("T", " ").substring(0, 19);
+  const entry = `${dateStr} UTC - ${uid} - ${success ? "OK" : "FAIL"}`;
   await env.LOGS.put(`log:${hid}:${Date.now()}`, entry);
 }
