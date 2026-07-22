@@ -288,13 +288,33 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
         return new Response("OK");
       }
 
+      // Fetch up to 100 keys to capture all recent logs
       const list = await env.LOGS.list({
         prefix: `log:${householdId}:`,
-        limit: 10
+        limit: 100
       });
 
+      if (!list.keys || list.keys.length === 0) {
+        const replyMsg = `📊 <b>Access Logs:</b>\n\nNo logs recorded yet.`;
+        if (callback) await telegram.editMessage(env, chatId, callback.message!.message_id, replyMsg);
+        else await telegram.sendMessage(env, chatId, replyMsg);
+        return new Response("OK");
+      }
+
+      // Sort keys descending by timestamp so newest logs appear first
+      const sortedKeys = list.keys.sort((a: { name: string }, b: { name: string }) => {
+        const partsA = a.name.split(":");
+        const partsB = b.name.split(":");
+        const tsA = parseInt(partsA[partsA.length - 1] || "0");
+        const tsB = parseInt(partsB[partsB.length - 1] || "0");
+        return tsB - tsA;
+      });
+
+      // Take top 10 newest keys
+      const newestKeys = sortedKeys.slice(0, 10);
+
       const logs = await Promise.all(
-        list.keys.map(async (k: { name: string }) => {
+        newestKeys.map(async (k: { name: string }) => {
           const val = await env.LOGS.get(k.name);
           if (!val) return null;
           if (!val.match(/^\d{4}-\d{2}-\d{2}/)) {
@@ -309,7 +329,7 @@ export async function handleUpdate(env: any, update: TelegramUpdate, ctx?: any, 
         })
       );
 
-      const replyMsg = `📊 <b>Access Logs:</b>\n\n` + (logs.filter(Boolean).reverse().join("\n") || "No logs");
+      const replyMsg = `📊 <b>Access Logs (Recent 10):</b>\n\n` + (logs.filter(Boolean).join("\n") || "No logs");
       if (callback) {
         await telegram.editMessage(env, chatId, callback.message!.message_id, replyMsg);
       } else {
