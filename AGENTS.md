@@ -142,6 +142,10 @@ When modifying this repository, developers and AI agents **MUST** strictly follo
 * **Problem**: Standard `toLocaleTimeString()` outputs only the time portion without calendar dates (`HH:MM:SS AM/PM`), making historical audit logs ambiguous.
 * **Rule**: Always format access logs with full UTC dates: `YYYY-MM-DD HH:mm:ss UTC`.
 
+### 5. Cloudflare KV Key Sorting & Log Truncation
+* **Problem**: Cloudflare KV `list()` returns keys strictly in ascending lexicographical (alphabetical) order. When using `limit: 10`, Cloudflare KV stops after fetching the 10 oldest keys ever created in the namespace. Newer log events created later in time are placed at positions 11, 12... and are truncated by `limit: 10`, making new logs completely invisible!
+* **Rule**: When reading logs from KV, fetch matching keys with a higher limit (e.g. `limit: 100`), sort the keys by timestamp descending (`tsB - tsA`), and then slice the top 10 newest entries.
+
 ---
 
 ## 🛠️ Testing & Deployment
